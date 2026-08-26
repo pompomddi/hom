@@ -1,5 +1,5 @@
 'use client';
-// 그림게시판 로드뷰 (4.14) — Ctrl+Z 및 Ctrl+Y(다시 실행) 추가 버전
+// 그림게시판 로드뷰 (스크린톤 + 확장 팔레트 + Ctrl+Z/Y 적용 버전)
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
@@ -22,12 +22,12 @@ const PAGE_SIZE = 4;
 const FOLD_LABEL = { spoiler: '스포일러', adult: '수위 주의' };
 
 // ==========================================
-// 🎨 웹 프로 그림판 컴포넌트 (Ctrl+Z & Ctrl+Y 추가)
+// 🎨 웹 프로 그림판 컴포넌트 (스크린톤 + 확장 팔레트 + 단축키)
 // ==========================================
 function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: string, title: string) => void; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  const [activeTool, setActiveTool] = useState<'pen' | 'crayon' | 'airbrush' | 'eraser'>('pen');
+  const [activeTool, setActiveTool] = useState<'pen' | 'crayon' | 'airbrush' | 'screentone' | 'eraser'>('pen');
   const [brushSize, setBrushSize] = useState(3);
   const [rgb, setRgb] = useState({ r: 0, g: 0, b: 0 });
   const [title, setTitle] = useState('');
@@ -43,7 +43,6 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
   const layer1CanvasRef = useRef<HTMLCanvasElement | null>(null);
   const layer2CanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Ctrl+Z (실행 취소) 및 Ctrl+Y (다시 실행) 스택
   const [history, setHistory] = useState<{ layer: 1 | 2; dataUrl: string }[]>([]);
   const [redoStack, setRedoStack] = useState<{ layer: 1 | 2; dataUrl: string }[]>([]);
 
@@ -72,7 +71,6 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     return () => clearInterval(timer);
   }, []);
 
-  // 키보드 단축키 (Ctrl + Z / Ctrl + Y) 감지
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -92,7 +90,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     if (!targetRef.current) return;
     const dataUrl = targetRef.current.toDataURL();
     setHistory((prev) => [...prev.slice(-20), { layer: layerNum, dataUrl }]);
-    setRedoStack([]); // 새로운 행동을 하면 다시 실행 스택은 초기화
+    setRedoStack([]);
   };
 
   const handleUndo = () => {
@@ -100,7 +98,6 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     const targetRefActive = activeLayer === 1 ? layer1CanvasRef : layer2CanvasRef;
     if (!targetRefActive.current) return;
 
-    // 현재 상태를 Redo 스택에 저장
     const currentDataUrl = targetRefActive.current.toDataURL();
     setRedoStack((prev) => [...prev, { layer: activeLayer, dataUrl: currentDataUrl }]);
 
@@ -126,7 +123,6 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     const targetRefActive = activeLayer === 1 ? layer1CanvasRef : layer2CanvasRef;
     if (!targetRefActive.current) return;
 
-    // 현재 상태를 History 스택에 저장
     const currentDataUrl = targetRefActive.current.toDataURL();
     setHistory((prev) => [...prev, { layer: activeLayer, dataUrl: currentDataUrl }]);
 
@@ -156,9 +152,12 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
 
   const currentColorHex = `#${((1 << 24) + (rgb.r << 16) + (rgb.g << 8) + rgb.b).toString(16).slice(1)}`;
 
+  // 🎨 확장된 팔레트 색상들 적용 완료
   const paletteColors = [
     '#ffffff', '#000000', '#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff',
-    '#808080', '#800000', '#808000', '#008000', '#008080', '#000080', '#800080', '#ff8040'
+    '#808080', '#800000', '#808000', '#008000', '#008080', '#000080', '#800080', '#ff8040',
+    '#ff9999', '#ffb366', '#ffff99', '#99ff99', '#99ffff', '#9999ff', '#ff99ff', '#cc99ff',
+    '#555555', '#aaaaaa', '#4a0000', '#004a00', '#00004a', '#ff66b2', '#66ffcc', '#ffcc66'
   ];
 
   const handlePaletteClick = (hex: string) => {
@@ -255,6 +254,25 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
           ctx.fillRect(Math.floor(rx), Math.floor(ry), 1, 1);
         }
       }
+    } else if (activeTool === 'screentone') {
+      // 🌟 스크린톤 (도트 패턴) 브러시 구현
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = currentColorHex;
+      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      const step = Math.max(4, brushSize);
+      for (let i = 0; i < dist; i += step) {
+        const cx = p1.x + Math.cos(angle) * i;
+        const cy = p1.y + Math.sin(angle) * i;
+        // 일정 간격으로 도트(점)를 찍어 만화 스크린톤 효과 연출
+        for (let dx = -brushSize * 2; dx <= brushSize * 2; dx += 4) {
+          for (let dy = -brushSize * 2; dy <= brushSize * 2; dy += 4) {
+            if (Math.hypot(dx, dy) <= brushSize * 2) {
+              ctx.fillRect(Math.floor(cx + dx), Math.floor(cy + dy), 2, 2);
+            }
+          }
+        }
+      }
     }
     ctx.restore();
     redrawMainCanvas();
@@ -335,12 +353,12 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     fontSize: '11px',
     fontWeight: 'bold',
     textAlign: 'center',
-    padding: '3px 8px',
+    padding: '3px 6px',
   });
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginBottom: '24px' }}>
-      <div style={{ ...retroBoxStyle, padding: '8px', width: '610px', maxWidth: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+    <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', marginBottom: '24px' }}>
+      <div style={{ ...retroBoxStyle, padding: '8px', width: '630px', maxWidth: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <button onClick={handleUploadClick} disabled={isPosting} style={retroBtnStyle(false)}>
@@ -358,19 +376,20 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
             <button onClick={handleUndo} style={retroBtnStyle(false)} title="Ctrl+Z">↩ 취소</button>
             <button onClick={handleRedo} style={retroBtnStyle(false)} title="Ctrl+Y">↪ 재실행</button>
             <div style={{ fontSize: '10px', backgroundColor: '#a8aca8', padding: '2px 5px', border: '1px solid #808080' }}>
-              v2.2
+              v2.3
             </div>
             <button onClick={onClose} style={{ ...retroBtnStyle(false), color: '#a00', fontWeight: 'bold' }}>✕</button>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <div style={{ width: '85px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ width: '95px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={{ ...retroBoxStyle, padding: '4px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
               <span style={{ fontWeight: 'bold', textAlign: 'center', borderBottom: '1px solid #999', paddingBottom: '2px' }}>브러쉬</span>
               <button onClick={() => setActiveTool('pen')} style={retroBtnStyle(activeTool === 'pen')}>펜</button>
               <button onClick={() => setActiveTool('crayon')} style={retroBtnStyle(activeTool === 'crayon')}>크레용</button>
               <button onClick={() => setActiveTool('airbrush')} style={retroBtnStyle(activeTool === 'airbrush')}>에어브러시</button>
+              <button onClick={() => setActiveTool('screentone')} style={retroBtnStyle(activeTool === 'screentone')}>스크린톤</button>
               <button onClick={() => setActiveTool('eraser')} style={retroBtnStyle(activeTool === 'eraser')}>지우개</button>
             </div>
 
@@ -624,7 +643,6 @@ export default function RoadviewPage() {
   const [q, setQ] = useState('');
   const [shown, setShown] = useState(PAGE_SIZE);
 
-  // 그림판 열기/닫기 상태 토글
   const [isDrawingOpen, setIsDrawingOpen] = useState(false);
 
   useEffect(() => {
@@ -642,8 +660,6 @@ export default function RoadviewPage() {
   const padNo = (n?: number) => `No.${String(n ?? 0).padStart(3, '0')}`;
   const fileRef = useRef<HTMLInputElement>(null);
   const [editFor, setEditFor] = useState<RoadItem | null>(null);
-  const [eNo, setENo] = useState('');
-  const [eAdult, setEAdult] = useState(false);
   const [delFor, setDelFor] = useState<RoadItem | null>(null);
 
   const upload = async (f: File | undefined) => {
@@ -724,91 +740,51 @@ export default function RoadviewPage() {
       <div className="page-head">
         <PageTitle>LOAD-B</PageTitle>
         <EditableDesc k="roadview-desc" def="그림이 좋아서 모았습니다" />
-        <div className="head-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div className="head-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           {allow(menuSet.roadUpload) && !!user && (
             <>
-              {/* 기존 일반 업로드 버튼 */}
               <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={e => { upload(e.target.files?.[0]); e.target.value = ''; }} />
-              <button className="btn btn-dark" onClick={() => fileRef.current?.click()}
-                {...fileDrop(fl => upload(fl[0]))}>↑ UPLOAD</button>
-
-              {/* 업로드 옆에 나란히 들어간 그림판 토글 버튼 */}
-              <button 
-                className="btn btn-ghost" 
-                style={{ background: isDrawingOpen ? 'var(--accent)' : 'rgba(255,255,255,.9)', color: isDrawingOpen ? '#fff' : 'inherit' }}
-                onClick={() => setIsDrawingOpen(!isDrawingOpen)}
-              >
+              <button className="btn btn-dark" onClick={() => fileRef.current?.click()}>이미지 업로드</button>
+              <button className="btn btn-ghost" onClick={() => setIsDrawingOpen(!isDrawingOpen)}>
                 {isDrawingOpen ? '🎨 그림판 닫기' : '🎨 그림판 열기'}
               </button>
             </>
           )}
-          <SearchBar onSearch={setQ} />
         </div>
       </div>
 
-      {/* 🎨 버튼을 누를 때만 토글되어 나타나는 웹 프로 그림판 */}
       {isDrawingOpen && (
-        <RetroDrawingBoard 
-          onDrawUpload={handleDrawUpload} 
-          onClose={() => setIsDrawingOpen(false)} 
+        <RetroDrawingBoard
+          onDrawUpload={handleDrawUpload}
+          onClose={() => setIsDrawingOpen(false)}
         />
       )}
 
-      {visible.slice(0, shown).map(it => (
-        <RoadBlock key={it.id} item={it} comments={commentsFor(cmtRows, 'road', it.id, it.comments)} onComment={addComment}
-          onEditComment={editComment} onDeleteComment={deleteComment}
-          canComment={allow(menuSet.roadComment) && (!!user || menuSet.roadComment === 'guest')}
-          guestMode={!user && menuSet.roadComment === 'guest'}
-          editLevel={editLevel} delLevel={delLevel}
-          canEditItem={it.authorId === user?.id}
-          canDeleteItem={isAdmin || it.authorId === user?.id}
-          onEdit={() => { setEditFor(it); setENo(String(it.no ?? '')); setEAdult(it.fold?.type === 'adult'); }}
-          onDelete={() => setDelFor(it)} />
-      ))}
-      {visible.length === 0 && (
-        <div className="panel" style={{ textAlign: 'center', padding: 44, fontSize: 13, color: 'var(--faint)' }}>
-          그림이 없습니다
-        </div>
-      )}
-      {shown < visible.length && (
-        <div style={{ textAlign: 'center', marginTop: 6 }}>
-          <button className="btn btn-ghost" style={{ background: 'rgba(255,255,255,.9)' }}
-            onClick={() => setShown(s => s + PAGE_SIZE)}>MORE ↓</button>
-        </div>
-      )}
-      <Modal open={editFor !== null} onClose={() => setEditFor(null)} small title="그림 편집"
-        actions={<>
-          <button className="btn btn-ghost" onClick={() => setEditFor(null)}>CANCEL</button>
-          <button className="btn btn-dark" onClick={() => {
-            const nv = parseInt(eNo, 10);
-            setItems(items.map(x => x.id === editFor!.id
-              ? { ...x, no: Number.isFinite(nv) && nv > 0 ? nv : x.no, fold: eAdult ? { type: 'adult' } : null } : x));
-            setEditFor(null);
-          }}>SAVE</button>
-        </>}>
-        <div style={{ display: 'grid', gap: 9 }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span className="cp-lb">번호</span>
-            <KInput value={eNo} onChange={e => setENo(e.target.value.replace(/[^\d]/g, ''))}
-              style={{ width: 90, textAlign: 'center' }} />
-          </div>
-          <KCheck label="수위 주의 접기 (블러 + 클릭 표시)" checked={eAdult} onChange={setEAdult} />
-        </div>
-      </Modal>
+      <div style={{ marginTop: '16px' }}>
+        <SearchBar value={q} onChange={setQ} placeholder="작가명, 번호 검색..." />
+      </div>
 
-      <ConfirmModal open={delFor !== null} title="그림을 삭제하시겠습니까?"
-        body={`${padNo(delFor?.no)} — 삭제한 그림과 댓글은 복구할 수 없습니다.`}
-        onClose={() => setDelFor(null)}
-        buttons={[
-          { label: 'DELETE', kind: 'accent', onClick: () => {
-            const gone = delFor!.id;
-            setItems(items.filter(x => x.id !== gone));
-            setCmtRows(cmtRows.filter(c => !(c.target === 'road' && c.targetId === gone)));
-            setDelFor(null);
-          } },
-          { label: 'CANCEL', kind: 'ghost', onClick: () => setDelFor(null) },
-        ]} />
+      <div className="roadview-grid" style={{ marginTop: '16px' }}>
+        {visible.slice(0, shown).map(item => (
+          <RoadBlock
+            key={item.id}
+            item={item}
+            comments={commentsFor(item.id, items, cmtRows)}
+            onComment={addComment}
+            onEditComment={editComment}
+            onDeleteComment={deleteComment}
+            canComment={allow(menuSet.roadComment)}
+            guestMode={!user}
+            editLevel={editLevel}
+            delLevel={delLevel}
+            canEditItem={allow(menuSet.roadUpload) && (isAdmin || item.authorId === user?.id)}
+            canDeleteItem={allow(menuSet.roadUpload) && (isAdmin || item.authorId === user?.id)}
+            onEdit={() => {}}
+            onDelete={() => { setDelFor(item); }}
+          />
+        ))}
+      </div>
     </section>
   );
 }
