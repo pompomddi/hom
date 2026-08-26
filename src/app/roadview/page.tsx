@@ -444,11 +444,29 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
             </div>
           </div>
 
-          <div style={{ ...retroBoxStyle, padding: '4px', textAlign: 'center' }}>
-            <div style={{ fontSize: '10px', marginBottom: '2px' }}>크기: {brushSize}px</div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '2px' }}>
-              <button onClick={() => setBrushSize(Math.max(1, brushSize - 1))} style={retroBtnStyle(false)}>-</button>
-              <button onClick={() => setBrushSize(Math.min(30, brushSize + 1))} style={retroBtnStyle(false)}>+</button>
+          <div style={{ ...retroBoxStyle, padding: '4px' }}>
+            <div style={{ fontSize: '10px', marginBottom: '3px', textAlign: 'center' }}>브러시 크기</div>
+            <input
+              type="range"
+              min={1}
+              max={30}
+              value={brushSize}
+              onChange={(e) => setBrushSize(Number(e.target.value))}
+              style={{ width: '100%', marginBottom: '4px' }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={brushSize}
+                onChange={(e) => {
+                  const v = Math.round(Number(e.target.value));
+                  if (Number.isFinite(v)) setBrushSize(Math.min(30, Math.max(1, v)));
+                }}
+                style={{ width: '38px', fontSize: '10px', textAlign: 'center', border: '1px solid #808080', background: '#fff', color: '#000' }}
+              />
+              <span style={{ fontSize: '10px' }}>px</span>
             </div>
           </div>
         </div>
