@@ -1,6 +1,7 @@
 'use client';
-// 구글시트 게시판 (자동 탭 감지 버전) — 구글시트 API로 모든 탭을 자동으로 긁어와서 보여줌.
+// 구글시트 게시판 (API 자동 탭 감지 버전, v2) — "웹에 게시" 없이 평소 공유 설정 그대로 사용.
 // 새 탭을 추가해도 코드를 안 건드려도 자동으로 목록에 나타남.
+// 시트 첫 줄이 비어있어도(제목/디자인용 빈 줄) 안전하게 표시되도록 처리.
 import { useEffect, useState } from 'react';
 import { PageTitle, EditableDesc } from '@/components/ui/PageText';
 
@@ -13,9 +14,9 @@ const HIDDEN_TABS: string[] = [];
 
 type SheetTab = { title: string };
 
-function parseValues(values: string[][] | undefined): string[][] {
-  if (!values) return [];
-  return values;
+function isRowBlank(row: string[] | undefined): boolean {
+  if (!row) return true;
+  return row.every((c) => !c || c.trim() === '');
 }
 
 export default function SheetBoardPage() {
@@ -59,7 +60,7 @@ export default function SheetBoardPage() {
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error('내용 요청 실패');
       const data = await res.json();
-      setRows(parseValues(data.values));
+      setRows(data.values ?? []);
     } catch {
       setError('이 탭 내용을 불러오지 못했어요.');
     } finally {
@@ -77,9 +78,12 @@ export default function SheetBoardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  const header = rows?.[0] ?? [];
-  const body = rows?.slice(1) ?? [];
+  // 첫 줄이 비어있으면(제목용 빈 줄 등) 헤더로 쓰지 않고 그냥 전부 데이터 줄로 취급
+  const firstRowBlank = isRowBlank(rows?.[0]);
+  const header = !firstRowBlank ? rows?.[0] ?? [] : [];
+  const body = !firstRowBlank ? rows?.slice(1) ?? [] : rows ?? [];
   const loading = loadingTabs || loadingRows;
+  const hasAnyContent = body.some((r) => !isRowBlank(r)) || header.length > 0;
 
   return (
     <section className="page">
@@ -125,29 +129,31 @@ export default function SheetBoardPage() {
             표시할 탭이 없습니다
           </div>
         )}
-        {!loading && !error && rows && rows.length === 0 && (
+        {!loading && !error && !hasAnyContent && (
           <div style={{ padding: 44, textAlign: 'center', fontSize: 13, color: 'var(--faint)' }}>내용이 없습니다</div>
         )}
-        {!loading && !error && header.length > 0 && (
+        {!loading && !error && hasAnyContent && (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
-            <thead>
-              <tr>
-                {header.map((h, i) => (
-                  <th
-                    key={i}
-                    style={{
-                      textAlign: 'left',
-                      padding: '10px 14px',
-                      borderBottom: '1px solid rgba(0,0,0,.12)',
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+            {header.length > 0 && (
+              <thead>
+                <tr>
+                  {header.map((h, i) => (
+                    <th
+                      key={i}
+                      style={{
+                        textAlign: 'left',
+                        padding: '10px 14px',
+                        borderBottom: '1px solid rgba(0,0,0,.12)',
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            )}
             <tbody>
               {body.map((r, ri) => (
                 <tr key={ri} style={{ background: ri % 2 === 1 ? 'rgba(0,0,0,.02)' : undefined }}>
