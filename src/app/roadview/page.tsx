@@ -1,10 +1,10 @@
 'use client';
-// 그림게시판 로드뷰 (2호점 twany 전용 스토리지 + 빌드 에러 수정 완료 버전)
+// 그림게시판 로드뷰 (4.15) — 그림판 왼쪽 배치 + 색상 팔레트 확장 버전
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
   useLocalList, newId, fmtDate, Comment,
-  CommentRow, COMMENT_SEED, commentsFor,
+  CommentRow, COMMENT_KEY, COMMENT_SEED, commentsFor,
 } from '@/lib/postStore';
 import { RoadItem, ROAD_SEED } from '@/lib/galleryStore';
 import { SearchBar, KInput } from '@/components/ui/Kit';
@@ -18,19 +18,15 @@ import { useMenuSettings, MenuPerm } from '@/lib/menuStore';
 import { GuestIdBar } from '@/components/ui/GuestId';
 import { fileDrop } from '@/lib/dnd';
 
-// 🔑 2호점 전용 스토리지 키 정의 (1호점과 분리)
-const TWANY_ROAD_KEY = 'twany.road.v1';
-const TWANY_COMMENT_KEY = 'twany.comment.v1';
-
 const PAGE_SIZE = 4;
 const FOLD_LABEL = { spoiler: '스포일러', adult: '수위 주의' };
 
 // ==========================================
-// 🎨 웹 프로 그림판 컴포넌트
+// 🎨 웹 프로 그림판 컴포넌트 (Ctrl+Z & Ctrl+Y, 색상 확장)
 // ==========================================
 function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: string, title: string) => void; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  
+
   const [activeTool, setActiveTool] = useState<'pen' | 'crayon' | 'airbrush' | 'eraser'>('pen');
   const [brushSize, setBrushSize] = useState(3);
   const [rgb, setRgb] = useState({ r: 0, g: 0, b: 0 });
@@ -41,12 +37,13 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
   const [seconds, setSeconds] = useState(0);
 
   const [activeLayer, setActiveLayer] = useState<1 | 2>(1);
-  const [layer1Opacity] = useState(1);
-  const [layer2Opacity] = useState(1);
-  
+  const [layer1Opacity, setLayer1Opacity] = useState(1);
+  const [layer2Opacity, setLayer2Opacity] = useState(1);
+
   const layer1CanvasRef = useRef<HTMLCanvasElement | null>(null);
   const layer2CanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Ctrl+Z (실행 취소) 및 Ctrl+Y (다시 실행) 스택
   const [history, setHistory] = useState<{ layer: 1 | 2; dataUrl: string }[]>([]);
   const [redoStack, setRedoStack] = useState<{ layer: 1 | 2; dataUrl: string }[]>([]);
 
@@ -75,6 +72,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     return () => clearInterval(timer);
   }, []);
 
+  // 키보드 단축키 (Ctrl + Z / Ctrl + Y) 감지
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -94,7 +92,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     if (!targetRef.current) return;
     const dataUrl = targetRef.current.toDataURL();
     setHistory((prev) => [...prev.slice(-20), { layer: layerNum, dataUrl }]);
-    setRedoStack([]);
+    setRedoStack([]); // 새로운 행동을 하면 다시 실행 스택은 초기화
   };
 
   const handleUndo = () => {
@@ -156,9 +154,12 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
 
   const currentColorHex = `#${((1 << 24) + (rgb.r << 16) + (rgb.g << 8) + rgb.b).toString(16).slice(1)}`;
 
+  // 색상 팔레트: 16개 -> 32개로 확장 (파스텔 / 갈색 / 남색 계열 추가)
   const paletteColors = [
     '#ffffff', '#000000', '#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff',
-    '#808080', '#800000', '#808000', '#008000', '#008080', '#000080', '#800080', '#ff8040'
+    '#808080', '#800000', '#808000', '#008000', '#008080', '#000080', '#800080', '#ff8040',
+    '#ffc0cb', '#ffb347', '#f5deb3', '#dda0dd', '#98fb98', '#87ceeb', '#b0c4de', '#e6e6fa',
+    '#a0522d', '#8b4513', '#556b2f', '#2f4f4f', '#4b0082', '#c0c0c0', '#ffd700', '#40e0d0'
   ];
 
   const handlePaletteClick = (hex: string) => {
@@ -339,124 +340,123 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
   });
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginBottom: '24px' }}>
-      <div style={{ ...retroBoxStyle, padding: '8px', width: '610px', maxWidth: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <button onClick={handleUploadClick} disabled={isPosting} style={retroBtnStyle(false)}>
-              {isPosting ? '올리는 중...' : '🖼️ 완성작 등록'}
-            </button>
-            <input
-              type="text"
-              placeholder="그림 제목 입력..."
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              style={{ padding: '3px 6px', fontSize: '11px', width: '150px', border: '1px solid #808080', background: '#fff', color: '#000' }}
-            />
+    <div style={{ ...retroBoxStyle, padding: '8px', width: '610px', maxWidth: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <button onClick={handleUploadClick} disabled={isPosting} style={retroBtnStyle(false)}>
+            {isPosting ? '올리는 중...' : '🖼️ 완성작 등록'}
+          </button>
+          <input
+            type="text"
+            placeholder="그림 제목 입력..."
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            style={{ padding: '3px 6px', fontSize: '11px', width: '150px', border: '1px solid #808080', background: '#fff', color: '#000' }}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          <button onClick={handleUndo} style={retroBtnStyle(false)} title="Ctrl+Z">↩ 취소</button>
+          <button onClick={handleRedo} style={retroBtnStyle(false)} title="Ctrl+Y">↪ 재실행</button>
+          <div style={{ fontSize: '10px', backgroundColor: '#a8aca8', padding: '2px 5px', border: '1px solid #808080' }}>
+            v2.3
           </div>
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            <button onClick={handleUndo} style={retroBtnStyle(false)} title="Ctrl+Z">↩ 취소</button>
-            <button onClick={handleRedo} style={retroBtnStyle(false)} title="Ctrl+Y">↪ 재실행</button>
-            <div style={{ fontSize: '10px', backgroundColor: '#a8aca8', padding: '2px 5px', border: '1px solid #808080' }}>
-              v2.2 (twany)
+          <button onClick={onClose} style={{ ...retroBtnStyle(false), color: '#a00', fontWeight: 'bold' }}>✕</button>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ width: '85px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ ...retroBoxStyle, padding: '4px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            <span style={{ fontWeight: 'bold', textAlign: 'center', borderBottom: '1px solid #999', paddingBottom: '2px' }}>브러쉬</span>
+            <button onClick={() => setActiveTool('pen')} style={retroBtnStyle(activeTool === 'pen')}>펜</button>
+            <button onClick={() => setActiveTool('crayon')} style={retroBtnStyle(activeTool === 'crayon')}>크레용</button>
+            <button onClick={() => setActiveTool('airbrush')} style={retroBtnStyle(activeTool === 'airbrush')}>에어브러시</button>
+            <button onClick={() => setActiveTool('eraser')} style={retroBtnStyle(activeTool === 'eraser')}>지우개</button>
+          </div>
+
+          <div style={{ ...retroBoxStyle, padding: '4px', textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', marginBottom: '2px' }}>크기: {brushSize}px</div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '2px' }}>
+              <button onClick={() => setBrushSize(Math.max(1, brushSize - 1))} style={retroBtnStyle(false)}>-</button>
+              <button onClick={() => setBrushSize(Math.min(30, brushSize + 1))} style={retroBtnStyle(false)}>+</button>
             </div>
-            <button onClick={onClose} style={{ ...retroBtnStyle(false), color: '#a00', fontWeight: 'bold' }}>✕</button>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <div style={{ width: '85px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ ...retroBoxStyle, padding: '4px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              <span style={{ fontWeight: 'bold', textAlign: 'center', borderBottom: '1px solid #999', paddingBottom: '2px' }}>브러쉬</span>
-              <button onClick={() => setActiveTool('pen')} style={retroBtnStyle(activeTool === 'pen')}>펜</button>
-              <button onClick={() => setActiveTool('crayon')} style={retroBtnStyle(activeTool === 'crayon')}>크레용</button>
-              <button onClick={() => setActiveTool('airbrush')} style={retroBtnStyle(activeTool === 'airbrush')}>에어브러시</button>
-              <button onClick={() => setActiveTool('eraser')} style={retroBtnStyle(activeTool === 'eraser')}>지우개</button>
-            </div>
-
-            <div style={{ ...retroBoxStyle, padding: '4px', textAlign: 'center' }}>
-              <div style={{ fontSize: '10px', marginBottom: '2px' }}>크기: {brushSize}px</div>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '2px' }}>
-                <button onClick={() => setBrushSize(Math.max(1, brushSize - 1))} style={retroBtnStyle(false)}>-</button>
-                <button onClick={() => setBrushSize(Math.min(30, brushSize + 1))} style={retroBtnStyle(false)}>+</button>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ border: '2px inset #fff', backgroundColor: '#ffffff', width: '420px', height: '420px', maxWidth: '100%', cursor: 'crosshair', flex: 1, position: 'relative' }}>
-            <canvas
-              ref={canvasRef}
-              width={420}
-              height={420}
-              onMouseDown={startDrawing}
-              onMouseMove={draw}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
-              onTouchStart={startDrawing}
-              onTouchMove={draw}
-              onTouchEnd={stopDrawing}
-              style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
-            />
-          </div>
-
-          <div style={{ width: '115px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ ...retroBoxStyle, padding: '4px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '2px', marginBottom: '4px' }}>
-                {paletteColors.map((hex, i) => (
-                  <div
-                    key={i}
-                    onClick={() => handlePaletteClick(hex)}
-                    style={{ width: '20px', height: '16px', backgroundColor: hex, border: '1px solid #000', cursor: 'pointer' }}
-                  />
-                ))}
-              </div>
-              <div style={{ width: '100%', height: '16px', backgroundColor: currentColorHex, border: '1px solid #000', marginBottom: '4px' }} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                  <span style={{ color: 'red', fontWeight: 'bold' }}>R</span>
-                  <input type="range" min="0" max="255" value={rgb.r} onChange={(e) => setRgb({ ...rgb, r: Number(e.target.value) })} style={{ flex: 1, height: '6px' }} />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                  <span style={{ color: 'green', fontWeight: 'bold' }}>G</span>
-                  <input type="range" min="0" max="255" value={rgb.g} onChange={(e) => setRgb({ ...rgb, g: Number(e.target.value) })} style={{ flex: 1, height: '6px' }} />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                  <span style={{ color: 'blue', fontWeight: 'bold' }}>B</span>
-                  <input type="range" min="0" max="255" value={rgb.b} onChange={(e) => setRgb({ ...rgb, b: Number(e.target.value) })} style={{ flex: 1, height: '6px' }} />
-                </div>
-              </div>
-            </div>
-
-            <div style={{ ...retroBoxStyle, padding: '4px', fontSize: '10px' }}>
-              <div style={{ fontWeight: 'bold', marginBottom: '3px', borderBottom: '1px solid #999', display: 'flex', justifyContent: 'space-between' }}>
-                <span>레이어 관리</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                <div onClick={() => setActiveLayer(2)} style={{ padding: '2px 4px', background: activeLayer === 2 ? '#8090b0' : '#e0e0e0', color: activeLayer === 2 ? '#fff' : '#000', cursor: 'pointer', border: '1px solid #888', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Layer 2</span>
-                  <span>{Math.round(layer2Opacity * 100)}%</span>
-                </div>
-                <div onClick={() => setActiveLayer(1)} style={{ padding: '2px 4px', background: activeLayer === 1 ? '#8090b0' : '#e0e0e0', color: activeLayer === 1 ? '#fff' : '#000', cursor: 'pointer', border: '1px solid #888', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Layer 1 (배경)</span>
-                  <span>{Math.round(layer1Opacity * 100)}%</span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ ...retroBoxStyle, padding: '4px', textAlign: 'center' }}>
-              <button onClick={handleFillCanvas} style={{ ...retroBtnStyle(false), width: '100%', marginBottom: '4px' }}>배경 채우기</button>
-              <div style={{ fontSize: '9px' }}>작업 시간</div>
-              <div style={{ fontSize: '11px', fontWeight: 'bold' }}>{formatTimer(seconds)}</div>
-            </div>
-
-          </div>
+        <div style={{ border: '2px inset #fff', backgroundColor: '#ffffff', width: '420px', height: '420px', maxWidth: '100%', cursor: 'crosshair', flex: 1, position: 'relative' }}>
+          <canvas
+            ref={canvasRef}
+            width={420}
+            height={420}
+            onMouseDown={startDrawing}
+            onMouseMove={draw}
+            onMouseUp={stopDrawing}
+            onMouseLeave={stopDrawing}
+            onTouchStart={startDrawing}
+            onTouchMove={draw}
+            onTouchEnd={stopDrawing}
+            style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
+          />
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
-          <button onClick={handleClearLayer} style={retroBtnStyle(false)}>현재 레이어 비우기</button>
-          <div style={{ ...retroBoxStyle, padding: '2px 6px', fontSize: '10px' }}>
-            활성 레이어: <b>Layer {activeLayer}</b> 선택됨 😈
+        <div style={{ width: '115px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ ...retroBoxStyle, padding: '4px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '2px', marginBottom: '4px' }}>
+              {paletteColors.map((hex, i) => (
+                <div
+                  key={i}
+                  onClick={() => handlePaletteClick(hex)}
+                  title={hex}
+                  style={{ width: '20px', height: '16px', backgroundColor: hex, border: '1px solid #000', cursor: 'pointer' }}
+                />
+              ))}
+            </div>
+            <div style={{ width: '100%', height: '16px', backgroundColor: currentColorHex, border: '1px solid #000', marginBottom: '4px' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                <span style={{ color: 'red', fontWeight: 'bold' }}>R</span>
+                <input type="range" min="0" max="255" value={rgb.r} onChange={(e) => setRgb({ ...rgb, r: Number(e.target.value) })} style={{ flex: 1, height: '6px' }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                <span style={{ color: 'green', fontWeight: 'bold' }}>G</span>
+                <input type="range" min="0" max="255" value={rgb.g} onChange={(e) => setRgb({ ...rgb, g: Number(e.target.value) })} style={{ flex: 1, height: '6px' }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                <span style={{ color: 'blue', fontWeight: 'bold' }}>B</span>
+                <input type="range" min="0" max="255" value={rgb.b} onChange={(e) => setRgb({ ...rgb, b: Number(e.target.value) })} style={{ flex: 1, height: '6px' }} />
+              </div>
+            </div>
           </div>
+
+          <div style={{ ...retroBoxStyle, padding: '4px', fontSize: '10px' }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '3px', borderBottom: '1px solid #999', display: 'flex', justifyContent: 'space-between' }}>
+              <span>레이어 관리</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              <div onClick={() => setActiveLayer(2)} style={{ padding: '2px 4px', background: activeLayer === 2 ? '#8090b0' : '#e0e0e0', color: activeLayer === 2 ? '#fff' : '#000', cursor: 'pointer', border: '1px solid #888', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Layer 2</span>
+                <span>{Math.round(layer2Opacity * 100)}%</span>
+              </div>
+              <div onClick={() => setActiveLayer(1)} style={{ padding: '2px 4px', background: activeLayer === 1 ? '#8090b0' : '#e0e0e0', color: activeLayer === 1 ? '#fff' : '#000', cursor: 'pointer', border: '1px solid #888', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Layer 1 (배경)</span>
+                <span>{Math.round(layer1Opacity * 100)}%</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ ...retroBoxStyle, padding: '4px', textAlign: 'center' }}>
+            <button onClick={handleFillCanvas} style={{ ...retroBtnStyle(false), width: '100%', marginBottom: '4px' }}>배경 채우기</button>
+            <div style={{ fontSize: '9px' }}>작업 시간</div>
+            <div style={{ fontSize: '11px', fontWeight: 'bold' }}>{formatTimer(seconds)}</div>
+          </div>
+
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', flexWrap: 'wrap', gap: '4px' }}>
+        <button onClick={handleClearLayer} style={retroBtnStyle(false)}>현재 레이어 비우기</button>
+        <div style={{ ...retroBoxStyle, padding: '2px 6px', fontSize: '10px' }}>
+          활성 레이어: <b>Layer {activeLayer}</b> 선택됨
         </div>
       </div>
     </div>
@@ -464,7 +464,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
 }
 
 // ==========================================
-// RoadBlock 컴포넌트
+// 기존 RoadBlock 컴포넌트
 // ==========================================
 function RoadBlock({ item, comments, onComment, onEditComment, onDeleteComment, canComment, guestMode, editLevel, delLevel, canEditItem, canDeleteItem, onEdit, onDelete }: {
   item: RoadItem;
@@ -493,7 +493,7 @@ function RoadBlock({ item, comments, onComment, onEditComment, onDeleteComment, 
   const del = useConfirmDelete();
   const folded = item.fold && !open;
   const imgSrc = useBlobUrl(item.imgId ?? item.imgUrl);
-  
+
   const saveEdit = () => {
     if (editCid && editText.trim()) onEditComment(item.id, editCid, editText.trim());
     setEditCid(null);
@@ -619,14 +619,12 @@ export default function RoadviewPage() {
   const toast = useToast();
   const [menuSet] = useMenuSettings();
   const allow = (p: MenuPerm) => (p === 'admin' ? isAdmin : p === 'member' ? !!user : true);
-
-  // 🔑 2호점 전용 스토리지 키(TWANY_ROAD_KEY, TWANY_COMMENT_KEY) 할당
-  const [items, setItems, roadLoaded] = useLocalList<RoadItem>(TWANY_ROAD_KEY, ROAD_SEED);
-  const [cmtRows, setCmtRows] = useLocalList<CommentRow>(TWANY_COMMENT_KEY, COMMENT_SEED);
-  
+  const [items, setItems, roadLoaded] = useLocalList<RoadItem>('ohome.road.v1', ROAD_SEED);
+  const [cmtRows, setCmtRows] = useLocalList<CommentRow>(COMMENT_KEY, COMMENT_SEED);
   const [q, setQ] = useState('');
   const [shown, setShown] = useState(PAGE_SIZE);
 
+  // 그림판 열기/닫기 상태 토글
   const [isDrawingOpen, setIsDrawingOpen] = useState(false);
 
   useEffect(() => {
@@ -682,7 +680,7 @@ export default function RoadviewPage() {
     };
 
     setItems([it, ...items]);
-    toast(`🎨 ${padNo(it.no)} 그림이 로드뷰에 등록되었습니다!`);
+    toast(`🎨 ${padNo(it.no)} 그림이 로드비에 등록되었습니다!`);
   };
 
   const addComment = (id: string, text: string, guest?: { name: string; pw: string }) => {
@@ -721,127 +719,103 @@ export default function RoadviewPage() {
   const visible = items.filter(it => !q || it.author.includes(q)
     || padNo(it.no).includes(q) || String(it.no ?? '').includes(q));
 
-  const saveEditItem = () => {
-    if (!editFor) return;
-    const n = parseInt(eNo.trim(), 10);
-    const updated: RoadItem = {
-      ...editFor,
-      no: isNaN(n) ? editFor.no : n,
-      fold: eAdult ? { type: 'adult' } : null,
-    };
-    setItems(items.map(it => (it.id === editFor.id ? updated : it)));
-    setEditFor(null);
-    toast('수정되었습니다');
-  };
-
-  const confirmDeleteItem = () => {
-    if (!delFor) return;
-    setItems(items.filter(it => it.id !== delFor.id));
-    setDelFor(null);
-    toast('삭제되었습니다');
-  };
-
   return (
     <section className="page">
       <div className="page-head">
-        <PageTitle>LOAD-B (TWANY)</PageTitle>
-        <EditableDesc k="twany-roadview-desc" def="2호점 로드뷰 전용 공간입니다" />
+        <PageTitle>LOAD-B</PageTitle>
+        <EditableDesc k="roadview-desc" def="그림이 좋아서 모았습니다" />
         <div className="head-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {allow(menuSet.roadUpload) && !!user && (
             <>
+              {/* 기존 일반 업로드 버튼 */}
               <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={e => { upload(e.target.files?.[0]); e.target.value = ''; }} />
-              <button className="btn btn-dark" onClick={() => fileRef.current?.click()}>
-                UPLOAD
-              </button>
-              <button className="btn btn-dark" onClick={() => setIsDrawingOpen(!isDrawingOpen)}>
-                🎨 그림판 {isDrawingOpen ? '닫기' : '열기'}
+              <button className="btn btn-dark" onClick={() => fileRef.current?.click()}
+                {...fileDrop(fl => upload(fl[0]))}>↑ UPLOAD</button>
+
+              {/* 업로드 옆에 나란히 들어간 그림판 토글 버튼 */}
+              <button
+                className="btn btn-ghost"
+                style={{ background: isDrawingOpen ? 'var(--accent)' : 'rgba(255,255,255,.9)', color: isDrawingOpen ? '#fff' : 'inherit' }}
+                onClick={() => setIsDrawingOpen(!isDrawingOpen)}
+              >
+                {isDrawingOpen ? '🎨 그림판 닫기' : '🎨 그림판 열기'}
               </button>
             </>
           )}
-          <SearchBar placeholder="No. 또는 작성자..." onSearch={setQ} />
+          <SearchBar onSearch={setQ} />
         </div>
       </div>
 
-      {isDrawingOpen && (
-        <RetroDrawingBoard
-          onDrawUpload={handleDrawUpload}
-          onClose={() => setIsDrawingOpen(false)}
-        />
-      )}
-
-      <div {...fileDrop((files) => upload(files?.[0]))} className="roadview-list">
-        {visible.slice(0, shown).map(it => {
-          const cmts = commentsFor('road', it.id, cmtRows);
-          const canEditItem = isAdmin || (!!user && it.authorId === user.id);
-          const canDeleteItem = isAdmin || (!!user && it.authorId === user.id);
-
-          return (
-            <RoadBlock
-              key={it.id}
-              item={it}
-              comments={cmts}
-              onComment={addComment}
-              onEditComment={editComment}
-              onDeleteComment={deleteComment}
-              canComment={allow(menuSet.roadComment)}
-              guestMode={!user}
-              editLevel={editLevel}
-              delLevel={delLevel}
-              canEditItem={canEditItem}
-              canDeleteItem={canDeleteItem}
-              onEdit={() => {
-                setEditFor(it);
-                setENo(String(it.no ?? ''));
-                setEAdult(it.fold?.type === 'adult');
-              }}
-              onDelete={() => setDelFor(it)}
+      {/* 그림판(왼쪽) + 그림 목록(오른쪽) 나란히 배치되는 영역 */}
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        {isDrawingOpen && (
+          <div style={{ flex: '0 0 auto', position: 'sticky', top: 20 }}>
+            <RetroDrawingBoard
+              onDrawUpload={handleDrawUpload}
+              onClose={() => setIsDrawingOpen(false)}
             />
-          );
-        })}
-
-        {visible.length > shown && (
-          <div style={{ textAlign: 'center', marginTop: 24 }}>
-            <button className="btn btn-ghost" onClick={() => setShown(prev => prev + PAGE_SIZE)}>
-              LOAD MORE
-            </button>
           </div>
         )}
 
-        {visible.length === 0 && (
-          <div className="panel" style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
-            등록된 게시물이 없습니다 😈
-          </div>
-        )}
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+          {visible.slice(0, shown).map(it => (
+            <RoadBlock key={it.id} item={it} comments={commentsFor(cmtRows, 'road', it.id, it.comments)} onComment={addComment}
+              onEditComment={editComment} onDeleteComment={deleteComment}
+              canComment={allow(menuSet.roadComment) && (!!user || menuSet.roadComment === 'guest')}
+              guestMode={!user && menuSet.roadComment === 'guest'}
+              editLevel={editLevel} delLevel={delLevel}
+              canEditItem={it.authorId === user?.id}
+              canDeleteItem={isAdmin || it.authorId === user?.id}
+              onEdit={() => { setEditFor(it); setENo(String(it.no ?? '')); setEAdult(it.fold?.type === 'adult'); }}
+              onDelete={() => setDelFor(it)} />
+          ))}
+          {visible.length === 0 && (
+            <div className="panel" style={{ textAlign: 'center', padding: 44, fontSize: 13, color: 'var(--faint)' }}>
+              그림이 없습니다
+            </div>
+          )}
+          {shown < visible.length && (
+            <div style={{ textAlign: 'center', marginTop: 6 }}>
+              <button className="btn btn-ghost" style={{ background: 'rgba(255,255,255,.9)' }}
+                onClick={() => setShown(s => s + PAGE_SIZE)}>MORE ↓</button>
+            </div>
+          )}
+        </div>
       </div>
 
-      <Modal open={editFor !== null} onClose={() => setEditFor(null)} title="게시물 정보 수정"
+      <Modal open={editFor !== null} onClose={() => setEditFor(null)} small title="그림 편집"
         actions={<>
           <button className="btn btn-ghost" onClick={() => setEditFor(null)}>CANCEL</button>
-          <button className="btn btn-dark" onClick={saveEditItem}>SAVE</button>
+          <button className="btn btn-dark" onClick={() => {
+            const nv = parseInt(eNo, 10);
+            setItems(items.map(x => x.id === editFor!.id
+              ? { ...x, no: Number.isFinite(nv) && nv > 0 ? nv : x.no, fold: eAdult ? { type: 'adult' } : null } : x));
+            setEditFor(null);
+          }}>SAVE</button>
         </>}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>
-            번호
-            <KInput value={eNo} onChange={e => setENo(e.target.value)} placeholder="게시물 번호" style={{ marginTop: 4 }} />
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
-            <KCheck checked={eAdult} onChange={setEAdult} />
-            <span>수위 주의 (블러 처리)</span>
-          </label>
+        <div style={{ display: 'grid', gap: 9 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className="cp-lb">번호</span>
+            <KInput value={eNo} onChange={e => setENo(e.target.value.replace(/[^\d]/g, ''))}
+              style={{ width: 90, textAlign: 'center' }} />
+          </div>
+          <KCheck label="수위 주의 접기 (블러 + 클릭 표시)" checked={eAdult} onChange={setEAdult} />
         </div>
       </Modal>
 
-      <ConfirmModal
-        open={delFor !== null}
+      <ConfirmModal open={delFor !== null} title="그림을 삭제하시겠습니까?"
+        body={`${padNo(delFor?.no)} — 삭제한 그림과 댓글은 복구할 수 없습니다.`}
         onClose={() => setDelFor(null)}
-        title="게시물 삭제"
-        body="이 게시물을 정말 삭제하시겠습니까?"
         buttons={[
-          { label: '취소', kind: 'ghost', onClick: () => setDelFor(null) },
-          { label: '삭제', kind: 'accent', onClick: confirmDeleteItem }
-        ]}
-      />
+          { label: 'DELETE', kind: 'accent', onClick: () => {
+            const gone = delFor!.id;
+            setItems(items.filter(x => x.id !== gone));
+            setCmtRows(cmtRows.filter(c => !(c.target === 'road' && c.targetId === gone)));
+            setDelFor(null);
+          } },
+          { label: 'CANCEL', kind: 'ghost', onClick: () => setDelFor(null) },
+        ]} />
     </section>
   );
 }
