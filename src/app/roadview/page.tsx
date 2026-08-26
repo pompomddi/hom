@@ -1,5 +1,5 @@
 'use client';
-// 그림게시판 로드뷰 (4.15) — 그림판 왼쪽 배치 + 색상 팔레트 확장 버전
+// 그림게시판 로드비 (4.16) — 스크린톤/마커/연필 브러시 추가 + 레이어 3개
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
@@ -21,13 +21,16 @@ import { fileDrop } from '@/lib/dnd';
 const PAGE_SIZE = 4;
 const FOLD_LABEL = { spoiler: '스포일러', adult: '수위 주의' };
 
+type Tool = 'pen' | 'pencil' | 'crayon' | 'marker' | 'airbrush' | 'screentone' | 'eraser';
+type LayerNum = 1 | 2 | 3;
+
 // ==========================================
-// 🎨 웹 프로 그림판 컴포넌트 (Ctrl+Z & Ctrl+Y, 색상 확장)
+// 🎨 웹 프로 그림판 컴포넌트 (Ctrl+Z & Ctrl+Y, 브러시/레이어 확장)
 // ==========================================
 function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: string, title: string) => void; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const [activeTool, setActiveTool] = useState<'pen' | 'crayon' | 'airbrush' | 'eraser'>('pen');
+  const [activeTool, setActiveTool] = useState<Tool>('pen');
   const [brushSize, setBrushSize] = useState(3);
   const [rgb, setRgb] = useState({ r: 0, g: 0, b: 0 });
   const [title, setTitle] = useState('');
@@ -36,37 +39,43 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
   const [prevPos, setPrevPos] = useState({ x: 0, y: 0 });
   const [seconds, setSeconds] = useState(0);
 
-  const [activeLayer, setActiveLayer] = useState<1 | 2>(1);
+  const [activeLayer, setActiveLayer] = useState<LayerNum>(1);
   const [layer1Opacity, setLayer1Opacity] = useState(1);
   const [layer2Opacity, setLayer2Opacity] = useState(1);
+  const [layer3Opacity, setLayer3Opacity] = useState(1);
 
   const layer1CanvasRef = useRef<HTMLCanvasElement | null>(null);
   const layer2CanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const layer3CanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const getLayerRef = (n: LayerNum) =>
+    n === 1 ? layer1CanvasRef : n === 2 ? layer2CanvasRef : layer3CanvasRef;
 
   // Ctrl+Z (실행 취소) 및 Ctrl+Y (다시 실행) 스택
-  const [history, setHistory] = useState<{ layer: 1 | 2; dataUrl: string }[]>([]);
-  const [redoStack, setRedoStack] = useState<{ layer: 1 | 2; dataUrl: string }[]>([]);
+  const [history, setHistory] = useState<{ layer: LayerNum; dataUrl: string }[]>([]);
+  const [redoStack, setRedoStack] = useState<{ layer: LayerNum; dataUrl: string }[]>([]);
 
   useEffect(() => {
     const timer = setInterval(() => setSeconds((s) => s + 1), 1000);
+
     layer1CanvasRef.current = document.createElement('canvas');
     layer1CanvasRef.current.width = 420;
     layer1CanvasRef.current.height = 420;
-
-    layer2CanvasRef.current = document.createElement('canvas');
-    layer2CanvasRef.current.width = 420;
-    layer2CanvasRef.current.height = 420;
-
     const ctx1 = layer1CanvasRef.current.getContext('2d');
     if (ctx1) {
       ctx1.fillStyle = '#ffffff';
       ctx1.fillRect(0, 0, 420, 420);
     }
 
-    const ctx2 = layer2CanvasRef.current.getContext('2d');
-    if (ctx2) {
-      ctx2.clearRect(0, 0, 420, 420);
-    }
+    layer2CanvasRef.current = document.createElement('canvas');
+    layer2CanvasRef.current.width = 420;
+    layer2CanvasRef.current.height = 420;
+    layer2CanvasRef.current.getContext('2d')?.clearRect(0, 0, 420, 420);
+
+    layer3CanvasRef.current = document.createElement('canvas');
+    layer3CanvasRef.current.width = 420;
+    layer3CanvasRef.current.height = 420;
+    layer3CanvasRef.current.getContext('2d')?.clearRect(0, 0, 420, 420);
 
     redrawMainCanvas();
     return () => clearInterval(timer);
@@ -87,8 +96,8 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [history, redoStack]);
 
-  const saveHistoryState = (layerNum: 1 | 2) => {
-    const targetRef = layerNum === 1 ? layer1CanvasRef : layer2CanvasRef;
+  const saveHistoryState = (layerNum: LayerNum) => {
+    const targetRef = getLayerRef(layerNum);
     if (!targetRef.current) return;
     const dataUrl = targetRef.current.toDataURL();
     setHistory((prev) => [...prev.slice(-20), { layer: layerNum, dataUrl }]);
@@ -97,7 +106,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
 
   const handleUndo = () => {
     if (history.length === 0) return;
-    const targetRefActive = activeLayer === 1 ? layer1CanvasRef : layer2CanvasRef;
+    const targetRefActive = getLayerRef(activeLayer);
     if (!targetRefActive.current) return;
 
     const currentDataUrl = targetRefActive.current.toDataURL();
@@ -106,7 +115,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     const lastState = history[history.length - 1];
     setHistory((prev) => prev.slice(0, -1));
 
-    const targetRef = lastState.layer === 1 ? layer1CanvasRef : layer2CanvasRef;
+    const targetRef = getLayerRef(lastState.layer);
     if (!targetRef.current) return;
     const ctx = targetRef.current.getContext('2d');
     if (!ctx) return;
@@ -122,7 +131,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
 
   const handleRedo = () => {
     if (redoStack.length === 0) return;
-    const targetRefActive = activeLayer === 1 ? layer1CanvasRef : layer2CanvasRef;
+    const targetRefActive = getLayerRef(activeLayer);
     if (!targetRefActive.current) return;
 
     const currentDataUrl = targetRefActive.current.toDataURL();
@@ -131,7 +140,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     const nextState = redoStack[redoStack.length - 1];
     setRedoStack((prev) => prev.slice(0, -1));
 
-    const targetRef = nextState.layer === 1 ? layer1CanvasRef : layer2CanvasRef;
+    const targetRef = getLayerRef(nextState.layer);
     if (!targetRef.current) return;
     const ctx = targetRef.current.getContext('2d');
     if (!ctx) return;
@@ -154,7 +163,6 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
 
   const currentColorHex = `#${((1 << 24) + (rgb.r << 16) + (rgb.g << 8) + rgb.b).toString(16).slice(1)}`;
 
-  // 색상 팔레트: 16개 -> 32개로 확장 (파스텔 / 갈색 / 남색 계열 추가)
   const paletteColors = [
     '#ffffff', '#000000', '#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff',
     '#808080', '#800000', '#808000', '#008000', '#008080', '#000080', '#800080', '#ff8040',
@@ -177,22 +185,22 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
 
     ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
 
-    if (layer1CanvasRef.current) {
+    const layers: [HTMLCanvasElement | null, number][] = [
+      [layer1CanvasRef.current, layer1Opacity],
+      [layer2CanvasRef.current, layer2Opacity],
+      [layer3CanvasRef.current, layer3Opacity],
+    ];
+    for (const [layerCanvas, opacity] of layers) {
+      if (!layerCanvas) continue;
       ctx.save();
-      ctx.globalAlpha = layer1Opacity;
-      ctx.drawImage(layer1CanvasRef.current, 0, 0);
-      ctx.restore();
-    }
-    if (layer2CanvasRef.current) {
-      ctx.save();
-      ctx.globalAlpha = layer2Opacity;
-      ctx.drawImage(layer2CanvasRef.current, 0, 0);
+      ctx.globalAlpha = opacity;
+      ctx.drawImage(layerCanvas, 0, 0);
       ctx.restore();
     }
   };
 
   const getTargetLayerCtx = () => {
-    const targetRef = activeLayer === 1 ? layer1CanvasRef : layer2CanvasRef;
+    const targetRef = getLayerRef(activeLayer);
     if (!targetRef.current) return null;
     return targetRef.current.getContext('2d');
   };
@@ -232,6 +240,18 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);
       ctx.stroke();
+    } else if (activeTool === 'pencil') {
+      // 연필: 얇고 결이 있는 선 (농도가 살짝 흔들림)
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = currentColorHex;
+      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      for (let i = 0; i < dist; i += 1) {
+        const x = p1.x + Math.cos(angle) * i + (Math.random() - 0.5) * brushSize * 0.6;
+        const y = p1.y + Math.sin(angle) * i + (Math.random() - 0.5) * brushSize * 0.6;
+        ctx.globalAlpha = 0.45 + Math.random() * 0.35;
+        ctx.fillRect(Math.floor(x), Math.floor(y), 1, 1);
+      }
     } else if (activeTool === 'crayon') {
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = currentColorHex;
@@ -242,6 +262,18 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
         const y = p1.y + Math.sin(angle) * i + (Math.random() - 0.5) * brushSize * 1.5;
         ctx.fillRect(Math.floor(x), Math.floor(y), Math.max(1, brushSize * 0.8), Math.max(1, brushSize * 0.8));
       }
+    } else if (activeTool === 'marker') {
+      // 마커: 반투명하고 두꺼운 형광펜 느낌
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = currentColorHex;
+      ctx.lineWidth = brushSize * 2.4;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
     } else if (activeTool === 'airbrush') {
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = currentColorHex;
@@ -254,6 +286,25 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
           const rx = cx + (Math.random() - 0.5) * brushSize * 4;
           const ry = cy + (Math.random() - 0.5) * brushSize * 4;
           ctx.fillRect(Math.floor(rx), Math.floor(ry), 1, 1);
+        }
+      }
+    } else if (activeTool === 'screentone') {
+      // 스크린톤: 만화 톤처럼 일정한 격자에 맞춰 작은 점을 찍는 브러시
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = currentColorHex;
+      const gridSize = Math.max(4, Math.round(brushSize * 1.6));
+      const dotRadius = Math.max(1, gridSize * 0.26);
+      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      for (let i = 0; i <= dist; i += 1) {
+        const x = p1.x + Math.cos(angle) * i;
+        const y = p1.y + Math.sin(angle) * i;
+        const gx = Math.round(x / gridSize) * gridSize;
+        const gy = Math.round(y / gridSize) * gridSize;
+        if (Math.hypot(x - gx, y - gy) < 1) {
+          ctx.beginPath();
+          ctx.arc(gx, gy, dotRadius, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
     }
@@ -333,14 +384,30 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     borderRight: active ? '1.5px solid #ffffff' : '1.5px solid #404040',
     borderBottom: active ? '1.5px solid #ffffff' : '1.5px solid #404040',
     cursor: 'pointer',
-    fontSize: '11px',
+    fontSize: '10.5px',
     fontWeight: 'bold',
     textAlign: 'center',
-    padding: '3px 8px',
+    padding: '3px 4px',
   });
 
+  const toolList: { id: Tool; label: string }[] = [
+    { id: 'pen', label: '펜' },
+    { id: 'pencil', label: '연필' },
+    { id: 'crayon', label: '크레용' },
+    { id: 'marker', label: '마커' },
+    { id: 'airbrush', label: '에어브러시' },
+    { id: 'screentone', label: '스크린톤' },
+    { id: 'eraser', label: '지우개' },
+  ];
+
+  const layerRows: { n: LayerNum; label: string; opacity: number }[] = [
+    { n: 3, label: 'Layer 3', opacity: layer3Opacity },
+    { n: 2, label: 'Layer 2', opacity: layer2Opacity },
+    { n: 1, label: 'Layer 1 (배경)', opacity: layer1Opacity },
+  ];
+
   return (
-    <div style={{ ...retroBoxStyle, padding: '8px', width: '610px', maxWidth: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+    <div style={{ ...retroBoxStyle, padding: '8px', width: '650px', maxWidth: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           <button onClick={handleUploadClick} disabled={isPosting} style={retroBtnStyle(false)}>
@@ -358,20 +425,23 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
           <button onClick={handleUndo} style={retroBtnStyle(false)} title="Ctrl+Z">↩ 취소</button>
           <button onClick={handleRedo} style={retroBtnStyle(false)} title="Ctrl+Y">↪ 재실행</button>
           <div style={{ fontSize: '10px', backgroundColor: '#a8aca8', padding: '2px 5px', border: '1px solid #808080' }}>
-            v2.3
+            v2.4
           </div>
           <button onClick={onClose} style={{ ...retroBtnStyle(false), color: '#a00', fontWeight: 'bold' }}>✕</button>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        <div style={{ width: '85px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div style={{ width: '118px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ ...retroBoxStyle, padding: '4px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
             <span style={{ fontWeight: 'bold', textAlign: 'center', borderBottom: '1px solid #999', paddingBottom: '2px' }}>브러쉬</span>
-            <button onClick={() => setActiveTool('pen')} style={retroBtnStyle(activeTool === 'pen')}>펜</button>
-            <button onClick={() => setActiveTool('crayon')} style={retroBtnStyle(activeTool === 'crayon')}>크레용</button>
-            <button onClick={() => setActiveTool('airbrush')} style={retroBtnStyle(activeTool === 'airbrush')}>에어브러시</button>
-            <button onClick={() => setActiveTool('eraser')} style={retroBtnStyle(activeTool === 'eraser')}>지우개</button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px' }}>
+              {toolList.map((t) => (
+                <button key={t.id} onClick={() => setActiveTool(t.id)} style={retroBtnStyle(activeTool === t.id)}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div style={{ ...retroBoxStyle, padding: '4px', textAlign: 'center' }}>
@@ -433,14 +503,24 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
               <span>레이어 관리</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              <div onClick={() => setActiveLayer(2)} style={{ padding: '2px 4px', background: activeLayer === 2 ? '#8090b0' : '#e0e0e0', color: activeLayer === 2 ? '#fff' : '#000', cursor: 'pointer', border: '1px solid #888', display: 'flex', justifyContent: 'space-between' }}>
-                <span>Layer 2</span>
-                <span>{Math.round(layer2Opacity * 100)}%</span>
-              </div>
-              <div onClick={() => setActiveLayer(1)} style={{ padding: '2px 4px', background: activeLayer === 1 ? '#8090b0' : '#e0e0e0', color: activeLayer === 1 ? '#fff' : '#000', cursor: 'pointer', border: '1px solid #888', display: 'flex', justifyContent: 'space-between' }}>
-                <span>Layer 1 (배경)</span>
-                <span>{Math.round(layer1Opacity * 100)}%</span>
-              </div>
+              {layerRows.map((row) => (
+                <div
+                  key={row.n}
+                  onClick={() => setActiveLayer(row.n)}
+                  style={{
+                    padding: '2px 4px',
+                    background: activeLayer === row.n ? '#8090b0' : '#e0e0e0',
+                    color: activeLayer === row.n ? '#fff' : '#000',
+                    cursor: 'pointer',
+                    border: '1px solid #888',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span>{row.label}</span>
+                  <span>{Math.round(row.opacity * 100)}%</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -614,7 +694,7 @@ function RoadBlock({ item, comments, onComment, onEditComment, onDeleteComment, 
   );
 }
 
-export default function RoadviewPage() {
+export default function LoadbPage() {
   const { user, isAdmin } = useAuth();
   const toast = useToast();
   const [menuSet] = useMenuSettings();
@@ -692,7 +772,7 @@ export default function RoadviewPage() {
     const target = items.find(it => it.id === id);
     if (target && target.authorId && target.authorId !== (user?.id ?? '')) {
       pushNotif({
-        type: 'comment', toUserId: target.authorId, href: '/roadview',
+        type: 'comment', toUserId: target.authorId, href: '/loadb',
         title: `${padNo(target.no)}에 새 댓글`,
         body: `${c.author} — ${text.slice(0, 50)}`,
       });
