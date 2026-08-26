@@ -1,5 +1,5 @@
 'use client';
-// 그림게시판 로드뷰 (2호점 twany 전용 스토리지 적용 버전)
+// 그림게시판 로드뷰 
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
