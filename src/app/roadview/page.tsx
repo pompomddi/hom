@@ -23,6 +23,7 @@ const FOLD_LABEL = { spoiler: '스포일러', adult: '수위 주의' };
 
 type Tool = 'pen' | 'pencil' | 'crayon' | 'marker' | 'airbrush' | 'screentone' | 'eraser';
 type LayerNum = 1 | 2 | 3;
+type Pt = { x: number; y: number; pressure: number };
 
 // ==========================================
 // 🎨 웹 프로 그림판 컴포넌트 (Ctrl+Z & Ctrl+Y, 브러시/레이어 확장)
@@ -36,7 +37,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
   const [title, setTitle] = useState('');
   const [isPosting, setIsPosting] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [prevPos, setPrevPos] = useState({ x: 0, y: 0 });
+  const [prevPos, setPrevPos] = useState<Pt>({ x: 0, y: 0, pressure: 0.5 });
   const [seconds, setSeconds] = useState(0);
 
   const [activeLayer, setActiveLayer] = useState<LayerNum>(1);
@@ -205,26 +206,34 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     return targetRef.current.getContext('2d');
   };
 
-  const getPos = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const getPos = (e: React.PointerEvent<HTMLCanvasElement>): Pt => {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
+    if (!canvas) return { x: 0, y: 0, pressure: 0.5 };
     const rect = canvas.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    // 타블렛/펜슬은 e.pressure(0~1)로 필압을 준다. 마우스나 필압 미지원 기기는 보통 0.5로 와서
+    // 그 값을 "보통 세기" 기준으로 삼는다. 값이 아예 0으로 오는 경우(일부 브라우저)도 0.5로 보정.
+  const pressure = e.pressure > 0 ? e.pressure : 0.5;
     return {
-      x: (clientX - rect.left) * (canvas.width / rect.width),
-      y: (clientY - rect.top) * (canvas.height / rect.height)
+      x: (e.clientX - rect.left) * (canvas.width / rect.width),
+      y: (e.clientY - rect.top) * (canvas.height / rect.height),
+      pressure,
     };
   };
 
-  const drawOnLayer = (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
+  const drawOnLayer = (p1: Pt, p2: Pt) => {
     const ctx = getTargetLayerCtx();
     if (!ctx) return;
+
+    // 필압 기반 굵기 배율: 살짝 눌렀으면 얇게, 꾹 눌렀으면 두껍게.
+    // 마우스처럼 필압이 없는 입력은 pressure가 0.5로 들어오므로 배율이 딱 1.0(원래 크기)이 된다.
+    const avgPressure = (p1.pressure + p2.pressure) / 2;
+    const pressureFactor = Math.max(0.35, Math.min(1.6, 0.5 + avgPressure));
+    const effSize = brushSize * pressureFactor;
 
     ctx.save();
     if (activeTool === 'eraser') {
       ctx.globalCompositeOperation = 'destination-out';
-      ctx.lineWidth = brushSize * 3;
+      ctx.lineWidth = effSize * 3;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
@@ -233,7 +242,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     } else if (activeTool === 'pen') {
       ctx.globalCompositeOperation = 'source-over';
       ctx.strokeStyle = currentColorHex;
-      ctx.lineWidth = brushSize;
+      ctx.lineWidth = effSize;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.beginPath();
@@ -247,8 +256,8 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
       const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
       const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
       for (let i = 0; i < dist; i += 1) {
-        const x = p1.x + Math.cos(angle) * i + (Math.random() - 0.5) * brushSize * 0.6;
-        const y = p1.y + Math.sin(angle) * i + (Math.random() - 0.5) * brushSize * 0.6;
+        const x = p1.x + Math.cos(angle) * i + (Math.random() - 0.5) * effSize * 0.6;
+        const y = p1.y + Math.sin(angle) * i + (Math.random() - 0.5) * effSize * 0.6;
         ctx.globalAlpha = 0.45 + Math.random() * 0.35;
         ctx.fillRect(Math.floor(x), Math.floor(y), 1, 1);
       }
@@ -258,16 +267,16 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
       const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
       const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
       for (let i = 0; i < dist; i += 2) {
-        const x = p1.x + Math.cos(angle) * i + (Math.random() - 0.5) * brushSize * 1.5;
-        const y = p1.y + Math.sin(angle) * i + (Math.random() - 0.5) * brushSize * 1.5;
-        ctx.fillRect(Math.floor(x), Math.floor(y), Math.max(1, brushSize * 0.8), Math.max(1, brushSize * 0.8));
+        const x = p1.x + Math.cos(angle) * i + (Math.random() - 0.5) * effSize * 1.5;
+        const y = p1.y + Math.sin(angle) * i + (Math.random() - 0.5) * effSize * 1.5;
+        ctx.fillRect(Math.floor(x), Math.floor(y), Math.max(1, effSize * 0.8), Math.max(1, effSize * 0.8));
       }
     } else if (activeTool === 'marker') {
       // 마커: 반투명하고 두꺼운 형광펜 느낌
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 0.35;
       ctx.strokeStyle = currentColorHex;
-      ctx.lineWidth = brushSize * 2.4;
+      ctx.lineWidth = effSize * 2.4;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.beginPath();
@@ -283,8 +292,8 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
         const cx = p1.x + Math.cos(angle) * i;
         const cy = p1.y + Math.sin(angle) * i;
         for (let j = 0; j < 5; j++) {
-          const rx = cx + (Math.random() - 0.5) * brushSize * 4;
-          const ry = cy + (Math.random() - 0.5) * brushSize * 4;
+          const rx = cx + (Math.random() - 0.5) * effSize * 4;
+          const ry = cy + (Math.random() - 0.5) * effSize * 4;
           ctx.fillRect(Math.floor(rx), Math.floor(ry), 1, 1);
         }
       }
@@ -292,7 +301,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
       // 스크린톤: 만화 톤처럼 일정한 격자에 맞춰 작은 점을 찍는 브러시
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = currentColorHex;
-      const gridSize = Math.max(4, Math.round(brushSize * 1.6));
+      const gridSize = Math.max(4, Math.round(effSize * 1.6));
       const dotRadius = Math.max(1, gridSize * 0.26);
       const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
       const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
@@ -312,22 +321,29 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
     redrawMainCanvas();
   };
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const startDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
     saveHistoryState(activeLayer);
     setIsDrawing(true);
+    // 펜이 캔버스 밖으로 살짝 나가도 선이 끊기지 않도록 포인터를 붙잡아둔다.
+    e.currentTarget.setPointerCapture?.(e.pointerId);
     const pos = getPos(e);
     setPrevPos(pos);
     drawOnLayer(pos, pos);
   };
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
     const currentPos = getPos(e);
     drawOnLayer(prevPos, currentPos);
     setPrevPos(currentPos);
   };
 
-  const stopDrawing = () => setIsDrawing(false);
+  const stopDrawing = (e?: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e) {
+      try { e.currentTarget.releasePointerCapture?.(e.pointerId); } catch {}
+    }
+    setIsDrawing(false);
+  };
 
   const handleClearLayer = () => {
     saveHistoryState(activeLayer);
@@ -476,13 +492,11 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
             ref={canvasRef}
             width={420}
             height={420}
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            onTouchStart={startDrawing}
-            onTouchMove={draw}
-            onTouchEnd={stopDrawing}
+            onPointerDown={startDrawing}
+            onPointerMove={draw}
+            onPointerUp={stopDrawing}
+            onPointerLeave={stopDrawing}
+            onPointerCancel={stopDrawing}
             style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
           />
         </div>
