@@ -1,5 +1,5 @@
 'use client';
-// 그림게시판 로드뷰 (타입 에러 수정 완료 버전)
+// 그림게시판 로드뷰 (최종 빌드 에러 수정 완료 버전)
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
@@ -713,12 +713,18 @@ export default function RoadviewPage() {
   };
 
   const editComment = (id: string, cid: string, text: string) => {
-    if (cmtRows.some(c => c.id === cid)) setCmtRows(cmtRows.map(c => (c.id === cid ? { ...c, text } : c)));
-    else setItems(items.map(it => it.id === id ? { ...it, comments: it.comments.map(c => c.id === cid ? { ...c, text } : c) } : it));
+    if (cmtRows.some(c => c.id === cid)) {
+      setCmtRows(cmtRows.map(c => (c.id === cid ? { ...c, text } : c)));
+    } else {
+      setItems(items.map(it => it.id === id ? { ...it, comments: it.comments.map(c => c.id === cid ? { ...c, text } : c) } : it));
+    }
   };
   const deleteComment = (id: string, cid: string) => {
-    if (cmtRows.some(c => c.id === cid)) setCmtRows(cmtRows.filter(c => c.id !== cid));
-    else setItems(items.map(it => it.id === id ? { ...it, comments: it.comments.filter(c => c.id !== cid) } : it));
+    if (cmtRows.some(c => c.id === cid)) {
+      setCmtRows(cmtRows.filter(c => c.id !== cid));
+    } else {
+      setItems(items.map(it => it.id === id ? { ...it, comments: it.comments.filter(c => c.id !== cid) } : it));
+    }
   };
   const editLevel = (c: Comment): 'free' | 'pw' | null => {
     if (user && c.authorId === user.id) return 'free';
