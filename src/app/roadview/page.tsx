@@ -1,5 +1,5 @@
 'use client';
-// 그림게시판 로드뷰 (최종 빌드 에러 수정 완료 버전)
+
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
@@ -11,19 +11,14 @@ import { SearchBar, KInput } from '@/components/ui/Kit';
 import { putBlob, useBlobUrl } from '@/lib/blobStore';
 import { Modal, ConfirmModal, useConfirmDelete } from '@/components/ui/Modal';
 import { EditableDesc, PageTitle } from '@/components/ui/PageText';
-import { KCheck } from '@/components/ui/Kit';
 import { useToast } from '@/components/ui/Toast';
 import { pushNotif } from '@/lib/notifStore';
 import { useMenuSettings, MenuPerm } from '@/lib/menuStore';
 import { GuestIdBar } from '@/components/ui/GuestId';
-import { fileDrop } from '@/lib/dnd';
 
 const PAGE_SIZE = 4;
 const FOLD_LABEL = { spoiler: '스포일러', adult: '수위 주의' };
 
-// ==========================================
-// 🎨 웹 프로 그림판 컴포넌트
-// ==========================================
 function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: string, title: string) => void; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -471,7 +466,7 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
           <button onClick={handleClearLayer} style={retroBtnStyle(false)}>현재 레이어 비우기</button>
           <div style={{ ...retroBoxStyle, padding: '2px 6px', fontSize: '10px' }}>
-            활성 레이어: <b>Layer {activeLayer}</b> 선택됨 😈
+            활성 레이어: <b>Layer {activeLayer}</b> 선택됨
           </div>
         </div>
       </div>
@@ -479,9 +474,6 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
   );
 }
 
-// ==========================================
-// 기존 RoadBlock 컴포넌트
-// ==========================================
 function RoadBlock({ item, comments, onComment, onEditComment, onDeleteComment, canComment, guestMode, editLevel, delLevel, canEditItem, canDeleteItem, onEdit, onDelete }: {
   item: RoadItem;
   comments: Comment[];
@@ -701,7 +693,9 @@ export default function RoadviewPage() {
     const c: CommentRow = guest
       ? { ...base, author: guest.name, authorId: '', guestPw: guest.pw }
       : { ...base, author: user?.nickname ?? '익명', authorId: user?.id ?? '' };
-    setCmtRows([...cmtRows, c]);
+    
+    setCmtRows((prev: CommentRow[]) => [...prev, c]);
+    
     const target = items.find(it => it.id === id);
     if (target && target.authorId && target.authorId !== (user?.id ?? '')) {
       pushNotif({
@@ -714,18 +708,20 @@ export default function RoadviewPage() {
 
   const editComment = (id: string, cid: string, text: string) => {
     if (cmtRows.some(c => c.id === cid)) {
-      setCmtRows(cmtRows.map(c => (c.id === cid ? { ...c, text } : c)));
+      setCmtRows((prev: CommentRow[]) => prev.map(c => (c.id === cid ? { ...c, text } : c)));
     } else {
       setItems(items.map(it => it.id === id ? { ...it, comments: it.comments.map(c => c.id === cid ? { ...c, text } : c) } : it));
     }
   };
+
   const deleteComment = (id: string, cid: string) => {
     if (cmtRows.some(c => c.id === cid)) {
-      setCmtRows(cmtRows.filter(c => c.id !== cid));
+      setCmtRows((prev: CommentRow[]) => prev.filter(c => c.id !== cid));
     } else {
       setItems(items.map(it => it.id === id ? { ...it, comments: it.comments.filter(c => c.id !== cid) } : it));
     }
   };
+
   const editLevel = (c: Comment): 'free' | 'pw' | null => {
     if (user && c.authorId === user.id) return 'free';
     return !c.authorId && c.guestPw ? 'pw' : null;
