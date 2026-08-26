@@ -1,5 +1,5 @@
 'use client';
-// 그림게시판 로드뷰 (스크린톤 + 확장 팔레트 + Ctrl+Z/Y 적용 버전)
+// 그림게시판 로드뷰 (타입 에러 수정 완료 버전)
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
@@ -22,7 +22,7 @@ const PAGE_SIZE = 4;
 const FOLD_LABEL = { spoiler: '스포일러', adult: '수위 주의' };
 
 // ==========================================
-// 🎨 웹 프로 그림판 컴포넌트 (스크린톤 + 확장 팔레트 + 단축키)
+// 🎨 웹 프로 그림판 컴포넌트
 // ==========================================
 function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: string, title: string) => void; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -152,7 +152,6 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
 
   const currentColorHex = `#${((1 << 24) + (rgb.r << 16) + (rgb.g << 8) + rgb.b).toString(16).slice(1)}`;
 
-  // 🎨 확장된 팔레트 색상들 적용 완료
   const paletteColors = [
     '#ffffff', '#000000', '#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff',
     '#808080', '#800000', '#808000', '#008000', '#008080', '#000080', '#800080', '#ff8040',
@@ -255,7 +254,6 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
         }
       }
     } else if (activeTool === 'screentone') {
-      // 🌟 스크린톤 (도트 패턴) 브러시 구현
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = currentColorHex;
       const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
@@ -264,7 +262,6 @@ function RetroDrawingBoard({ onDrawUpload, onClose }: { onDrawUpload: (base64: s
       for (let i = 0; i < dist; i += step) {
         const cx = p1.x + Math.cos(angle) * i;
         const cy = p1.y + Math.sin(angle) * i;
-        // 일정 간격으로 도트(점)를 찍어 만화 스크린톤 효과 연출
         for (let dx = -brushSize * 2; dx <= brushSize * 2; dx += 4) {
           for (let dy = -brushSize * 2; dy <= brushSize * 2; dy += 4) {
             if (Math.hypot(dx, dy) <= brushSize * 2) {
@@ -762,7 +759,7 @@ export default function RoadviewPage() {
       )}
 
       <div style={{ marginTop: '16px' }}>
-        <SearchBar value={q} onChange={setQ} placeholder="작가명, 번호 검색..." />
+        <SearchBar onSearch={setQ} placeholder="작가명, 번호 검색..." />
       </div>
 
       <div className="roadview-grid" style={{ marginTop: '16px' }}>
