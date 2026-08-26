@@ -1,5 +1,5 @@
 'use client';
-// 그림게시판 로드뷰 
+// 그림게시판 로드뷰 (2호점 twany 전용 스토리지 + 빌드 에러 수정 완료 버전)
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
@@ -682,7 +682,7 @@ export default function RoadviewPage() {
     };
 
     setItems([it, ...items]);
-    toast(`🎨 ${padNo(it.no)} 그림이 로드비에 등록되었습니다!`);
+    toast(`🎨 ${padNo(it.no)} 그림이 로드뷰에 등록되었습니다!`);
   };
 
   const addComment = (id: string, text: string, guest?: { name: string; pw: string }) => {
@@ -759,7 +759,7 @@ export default function RoadviewPage() {
               </button>
             </>
           )}
-          <SearchBar placeholder="No. 또는 작성자..." value={q} onChange={setQ} />
+          <SearchBar placeholder="No. 또는 작성자..." onSearch={setQ} />
         </div>
       </div>
 
@@ -770,9 +770,9 @@ export default function RoadviewPage() {
         />
       )}
 
-      <div {...fileDrop(f => upload(f))} className="roadview-list">
+      <div {...fileDrop((files) => upload(files?.[0]))} className="roadview-list">
         {visible.slice(0, shown).map(it => {
-          const cmts = commentsFor('road', it.id, cmtRows, it.comments);
+          const cmts = commentsFor('road', it.id, cmtRows);
           const canEditItem = isAdmin || (!!user && it.authorId === user.id);
           const canDeleteItem = isAdmin || (!!user && it.authorId === user.id);
 
@@ -835,9 +835,12 @@ export default function RoadviewPage() {
       <ConfirmModal
         open={delFor !== null}
         onClose={() => setDelFor(null)}
-        onConfirm={confirmDeleteItem}
         title="게시물 삭제"
-        message="이 게시물을 정말 삭제하시겠습니까?"
+        body="이 게시물을 정말 삭제하시겠습니까?"
+        buttons={[
+          { label: '취소', kind: 'ghost', onClick: () => setDelFor(null) },
+          { label: '삭제', kind: 'accent', onClick: confirmDeleteItem }
+        ]}
       />
     </section>
   );
