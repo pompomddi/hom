@@ -694,7 +694,7 @@ export default function RoadviewPage() {
       ? { ...base, author: guest.name, authorId: '', guestPw: guest.pw }
       : { ...base, author: user?.nickname ?? '익명', authorId: user?.id ?? '' };
     
-    setCmtRows((prev: CommentRow[]) => [...prev, c]);
+    setCmtRows([...cmtRows, c]);
     
     const target = items.find(it => it.id === id);
     if (target && target.authorId && target.authorId !== (user?.id ?? '')) {
@@ -708,7 +708,7 @@ export default function RoadviewPage() {
 
   const editComment = (id: string, cid: string, text: string) => {
     if (cmtRows.some(c => c.id === cid)) {
-      setCmtRows((prev: CommentRow[]) => prev.map(c => (c.id === cid ? { ...c, text } : c)));
+      setCmtRows(cmtRows.map(c => (c.id === cid ? { ...c, text } : c)));
     } else {
       setItems(items.map(it => it.id === id ? { ...it, comments: it.comments.map(c => c.id === cid ? { ...c, text } : c) } : it));
     }
@@ -716,7 +716,7 @@ export default function RoadviewPage() {
 
   const deleteComment = (id: string, cid: string) => {
     if (cmtRows.some(c => c.id === cid)) {
-      setCmtRows((prev: CommentRow[]) => prev.filter(c => c.id !== cid));
+      setCmtRows(cmtRows.filter(c => c.id !== cid));
     } else {
       setItems(items.map(it => it.id === id ? { ...it, comments: it.comments.filter(c => c.id !== cid) } : it));
     }
